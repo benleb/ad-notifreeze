@@ -10,7 +10,7 @@ notifreeze:
 """
 import re
 from datetime import datetime as dt
-
+from typing import Any, Dict, Sequence, Union
 import appdaemon.plugins.hass.hassapi as hass
 
 import adutils
@@ -18,17 +18,18 @@ import adutils
 APP_NAME = "NotiFreeze"
 APP_ICON = "❄️ "
 
+# state set by home assistant if entity exists but no state
+STATE_UNKNOWN = "unknown"
 
-class NotiFreeze(hass.Hass):
+
+class NotiFreeze(hass.Hass):  # type: ignore
     """Notifies about windows which should be closed."""
 
     SECONDS_PER_MIN: int = 60
-    # used for debugging
-    # SECONDS_PER_MIN: int = 10
 
-    def initialize(self):
+    def initialize(self) -> None:
         """Set up state listener."""
-        self.app_config = dict()
+        self.app_config: Dict[str, Union[int, float, str]] = dict()
         self.app_config["notify_service"] = str(self.args.get("notify_service"))
         self.sensor_outdoor = str(self.args.get("outdoor_temperature"))
         # time until notifications are triggered
@@ -41,8 +42,8 @@ class NotiFreeze(hass.Hass):
             self.sensor_outdoor
         ):
 
-            self.sensors = dict()
-            self.handles = dict()
+            self.sensors: Dict[str, str] = dict()
+            self.handles: Dict[str, str] = dict()
 
             for entity in self.get_state("binary_sensor"):
                 prefix = "binary_sensor.door_window_sensor_"
@@ -57,14 +58,18 @@ class NotiFreeze(hass.Hass):
                 self.log, APP_NAME, self.app_config, self.sensors, icon=APP_ICON
             )
 
-    def handler(self, entity, attribute, old, new, kwargs):
+    def handler(self, entity: str, attr: Any, old: str, new: str, kwargs: Dict[str, Any]) -> None:
         """Handle state changes."""
-        indoor, outdoor, difference = self.get_temperatures(entity)
+        try:
+            indoor, outdoor, difference = self.get_temperatures(entity)
+        except (ValueError, TypeError) as error:
+            self.error(f"No valid temperature values from sensor {entity}: {error}")
+            return
 
         if (
             old == "off"
             and new == "on"
-            and difference > self.app_config["max_difference"]
+            and difference > float(self.app_config["max_difference"])
         ):
 
             # door/window opened, schedule reminder/notification
@@ -74,12 +79,9 @@ class NotiFreeze(hass.Hass):
                 entity_id=entity,
             )
 
-            stripped_entity = self.split_entity(entity)[1].replace(
-                "door_window_sensor_", ""
-            )
             self.log(
                 f"{APP_ICON} reminder: ({self.app_config['initial_delay']}min): "
-                f"{stripped_entity} | diff: {difference:.1f}",
+                f"{self.strip_sensor(entity)} | diff: {difference:.1f}°C",
                 ascii_encode=False,
             )
 
@@ -87,19 +89,23 @@ class NotiFreeze(hass.Hass):
             # door/window closed, stopping scheduled timer
             self.kill_timer(entity)
 
-    def notification(self, kwargs):
+    def notification(self, kwargs: Dict[str, Any]) -> None:
         """Send notification."""
-        entity = kwargs.get("entity_id")
-        counter = kwargs.get("counter", 1)
+        entity: str = kwargs["entity_id"]
+        counter: int = int(kwargs.get("counter", 1))
 
-        indoor, outdoor, difference = self.get_temperatures(entity)
+        try:
+            indoor, outdoor, difference = self.get_temperatures(entity)
+        except (ValueError, TypeError) as error:
+            self.log(f"No valid temperature values to calculate difference: {error}")
+            return
 
+        # check if all required conditions still met, then processing with notification
         if (
-            difference > self.app_config["max_difference"]
+            difference > float(self.app_config["max_difference"])
             and self.get_state(entity) == "on"
             and entity != "binary_sensor.door_window_sensor_basement_window"
         ):
-            # all required conditions still met, processing with notification
 
             # exact state-change time but not relative/readable time
             last_changed = dt.fromisoformat(
@@ -125,7 +131,8 @@ class NotiFreeze(hass.Hass):
 
             # send notification
             self.call_service(
-                self.app_config["notify_service"].replace(".", "/"), message=message
+                str(self.app_config["notify_service"]).replace(".", "/"),
+                message=message,
             )
 
             # schedule next reminder
@@ -144,20 +151,33 @@ class NotiFreeze(hass.Hass):
             )
 
         elif entity in self.handles:
-            # temperature difference below allowed threshold
+            # temperature difference below/above allowed threshold
             self.kill_timer(entity)
 
-    def kill_timer(self, entity):
+    def kill_timer(self, entity: str) -> None:
         """Cancel scheduled task/timers."""
         self.cancel_timer(self.handles[entity])
         self.log(
-            f"{APP_ICON} reminder deleted: {self.split_entity(entity)[1]}",
+            f"{APP_ICON} reminder deleted: {self.strip_sensor(entity)}",
             ascii_encode=False,
         )
 
-    def get_temperatures(self, entity):
+    def get_temperatures(self, entity: str) -> Sequence[float]:
         """Get temperature indoor, outdoor and the abs. difference of both."""
-        indoor_temperature = float(self.get_state(self.sensors[entity]))
-        outdoor_temperature = float(self.get_state(self.sensor_outdoor))
-        absolute_difference = abs(indoor_temperature - outdoor_temperature)
-        return indoor_temperature, outdoor_temperature, absolute_difference
+        indoor = float(self.get_state(self.sensors[entity], default=STATE_UNKNOWN))
+        outdoor = float(self.get_state(self.sensor_outdoor, default=STATE_UNKNOWN))
+        return (indoor, outdoor, abs(indoor - outdoor))
+        # indoor_state = self.get_state(self.sensors[entity], default=STATE_UNKNOWN)
+        # outdoor_state = self.get_state(self.sensor_outdoor, default=STATE_UNKNOWN)
+        # if STATE_UNKNOWN not in (indoor_state, outdoor_state):
+        #     indoor_temperature = float(indoor_state)
+        #     outdoor_temperature = float(outdoor_state)
+        #     absolute_difference = abs(indoor_temperature - outdoor_temperature)
+        #     return (indoor_temperature, outdoor_temperature, absolute_difference)
+        # else:
+        #     raise ValueError(
+        #         f"Unknown state! indoor: {indoor_state}, outdoor: {outdoor_state}"
+        #     )
+
+    def strip_sensor(self, sensor: str) -> str:
+        return str(self.split_entity(sensor)[1].replace("door_window_sensor_", ""))
