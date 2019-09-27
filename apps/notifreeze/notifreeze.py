@@ -55,7 +55,7 @@ class NotiFreeze(hass.Hass):  # type: ignore
                     self.listen_state(self.handler, entity=entity)
 
             adutils.show_info(
-                self.log, APP_NAME, self.app_config, self.sensors, icon=APP_ICON
+                self.log, APP_NAME, self.app_config, self.sensors, icon=APP_ICON, appdaemon_version=self.get_ad_version()
             )
 
     def handler(self, entity: str, attr: Any, old: str, new: str, kwargs: Dict[str, Any]) -> None:
