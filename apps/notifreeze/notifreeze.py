@@ -13,7 +13,7 @@ from datetime import datetime as dt
 from typing import Any, Dict, Sequence, Union
 import appdaemon.plugins.hass.hassapi as hass
 
-import adutils
+from adutils import ADutils
 
 APP_NAME = "NotiFreeze"
 APP_ICON = "❄️ "
@@ -55,11 +55,12 @@ class NotiFreeze(hass.Hass):  # type: ignore
                     self.sensors[entity] = f"sensor.temperature_{room}"
                     self.listen_state(self.handler, entity=entity)
 
-            adutils.show_info(
-                self.log, APP_NAME, self.app_config, self.sensors, icon=APP_ICON, appdaemon_version=self.get_ad_version()
-            )
+            self.adu = ADutils(APP_NAME, self.app_config, icon=APP_ICON, ad=self)
+            self.adu.show_info()
 
-    def handler(self, entity: str, attr: Any, old: str, new: str, kwargs: Dict[str, Any]) -> None:
+    def handler(
+        self, entity: str, attr: Any, old: str, new: str, kwargs: Dict[str, Any]
+    ) -> None:
         """Handle state changes."""
         try:
             indoor, outdoor, difference = self.get_temperatures(entity)
@@ -80,10 +81,10 @@ class NotiFreeze(hass.Hass):  # type: ignore
                 entity_id=entity,
             )
 
-            self.log(
-                f"{APP_ICON} reminder: ({self.app_config['initial_delay']}min): "
+            self.adu.log(
+                f"reminder: ({self.app_config['initial_delay']}min): "
                 f"{self.strip_sensor(entity)} | diff: {difference:.1f}°C",
-                ascii_encode=False,
+                icon={APP_ICON},
             )
 
         elif old == "on" and new == "off" and entity in self.handles:
@@ -98,7 +99,9 @@ class NotiFreeze(hass.Hass):  # type: ignore
         try:
             indoor, outdoor, difference = self.get_temperatures(entity)
         except (ValueError, TypeError) as error:
-            self.log(f"No valid temperature values to calculate difference: {error}")
+            self.adu.log(
+                f"No valid temperature values to calculate difference: {error}"
+            )
             return
 
         # check if all required conditions still met, then processing with notification
@@ -144,10 +147,10 @@ class NotiFreeze(hass.Hass):  # type: ignore
                 counter=counter + 1,
             )
 
-            self.log(
-                f"{APP_ICON} notification sent to {self.app_config['notify_service']}: "
+            self.adu.log(
+                f"notification sent to {self.app_config['notify_service']}: "
                 f"{message}",
-                ascii_encode=False,
+                icon={APP_ICON},
                 level="DEBUG",
             )
 
@@ -158,10 +161,7 @@ class NotiFreeze(hass.Hass):  # type: ignore
     def kill_timer(self, entity: str) -> None:
         """Cancel scheduled task/timers."""
         self.cancel_timer(self.handles[entity])
-        self.log(
-            f"{APP_ICON} reminder deleted: {self.strip_sensor(entity)}",
-            ascii_encode=False,
-        )
+        self.adu.log(f"reminder deleted: {self.strip_sensor(entity)}", icon={APP_ICON})
 
     def get_temperatures(self, entity: str) -> Sequence[float]:
         """Get temperature indoor, outdoor and the abs. difference of both."""
