@@ -17,7 +17,7 @@ from adutils import ADutils
 
 APP_NAME = "NotiFreeze"
 APP_ICON = "❄️ "
-APP_VERSION = "0.4.1"
+APP_VERSION = "0.4.2"
 
 # state set by home assistant if entity exists but no state
 STATE_UNKNOWN = "unknown"
