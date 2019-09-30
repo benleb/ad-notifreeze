@@ -84,7 +84,7 @@ class NotiFreeze(hass.Hass):  # type: ignore
             self.adu.log(
                 f"reminder: ({self.app_config['initial_delay']}min): "
                 f"{self.strip_sensor(entity)} | diff: {difference:.1f}°C",
-                icon={APP_ICON},
+                icon=APP_ICON,
             )
 
         elif old == "on" and new == "off" and entity in self.handles:
@@ -150,7 +150,7 @@ class NotiFreeze(hass.Hass):  # type: ignore
             self.adu.log(
                 f"notification sent to {self.app_config['notify_service']}: "
                 f"{message}",
-                icon={APP_ICON},
+                icon=APP_ICON,
                 level="DEBUG",
             )
 
@@ -161,7 +161,7 @@ class NotiFreeze(hass.Hass):  # type: ignore
     def kill_timer(self, entity: str) -> None:
         """Cancel scheduled task/timers."""
         self.cancel_timer(self.handles[entity])
-        self.adu.log(f"reminder deleted: {self.strip_sensor(entity)}", icon={APP_ICON})
+        self.adu.log(f"reminder deleted: {self.strip_sensor(entity)}", icon=APP_ICON)
 
     def get_temperatures(self, entity: str) -> Sequence[float]:
         """Get temperature indoor, outdoor and the abs. difference of both."""
