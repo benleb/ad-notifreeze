@@ -2,7 +2,7 @@
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/custom-components/hacs)
 
-**NEEDS THE APPDAEMON MASTER/DEV BRANCH! Current stable (v3.0.5) will not work!**
+**NEEDS THE APPDAEMON BETA OR DEV BRANCH! Current stable (v3.0.5) will not work!**
 
 *[AppDaemon](https://github.com/home-assistant/appdaemon) app which reminds to close windows if temperature difference between inside/outside exceeds a specified threshold.*  
 This works for every 'room' separately e.g. an open window in the bathroom checks outside temperate against the bathroom temperature sensor. Useful in winter to remind you to close the bathroom windows after airing, but also in the summer when you do not want that hot outside air inside.
