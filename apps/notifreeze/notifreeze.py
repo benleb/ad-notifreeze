@@ -17,7 +17,7 @@ import hassapi as hass
 
 APP_NAME = "NotiFreeze"
 APP_ICON = "❄️ "
-APP_VERSION = "0.4.3"
+APP_VERSION = "0.4.4"
 
 # state set by home assistant if entity exists but no state
 STATE_UNKNOWN = "unknown"
