@@ -28,7 +28,7 @@ class NotiFreeze(hass.Hass):  # type: ignore
 
     SECONDS_PER_MIN: int = 60
 
-    def initialize(self) -> None:
+    async def initialize(self) -> None:
         """Set up state listener."""
         self.cfg: Dict[str, Any] = dict()
         self.cfg["notify_service"] = str(self.args.get("notify_service"))
@@ -39,19 +39,19 @@ class NotiFreeze(hass.Hass):  # type: ignore
         self.cfg["initial_delay"] = int(self.args.get("initial_delay", 5))
         self.cfg["reminder_delay"] = int(self.args.get("reminder_delay", 3))
 
-        if self.cfg["notify_service"] and self.entity_exists(self.sensor_outdoor):
+        if self.cfg["notify_service"] and await self.entity_exists(self.sensor_outdoor):
 
             self.sensors: Dict[str, str] = dict()
             self.handles: Dict[str, str] = dict()
 
-            for entity in self.get_state("binary_sensor"):
+            for entity in await self.get_state("binary_sensor"):
                 prefix = "binary_sensor.door_window_sensor_"
                 match = re.match(fr"{prefix}([a-zA-Z0-9]+)_?(\w+)?", entity)
                 room = match.group(1) if match else None
 
-                if room and self.entity_exists(f"sensor.temperature_{room}"):
+                if room and await self.entity_exists(f"sensor.temperature_{room}"):
                     self.sensors[entity] = f"sensor.temperature_{room}"
-                    self.listen_state(self.handler, entity=entity)
+                    await self.listen_state(self.handler, entity=entity)
 
             # set units
             self.cfg.setdefault(
@@ -65,12 +65,12 @@ class NotiFreeze(hass.Hass):  # type: ignore
                 APP_NAME, self.cfg, icon=APP_ICON, ad=self, show_config=True
             )
 
-    def handler(
+    async def handler(
         self, entity: str, attr: Any, old: str, new: str, kwargs: Dict[str, Any]
     ) -> None:
         """Handle state changes."""
         try:
-            indoor, outdoor, difference = self.get_temperatures(entity)
+            indoor, outdoor, difference = await self.get_temperatures(entity)
         except (ValueError, TypeError) as error:
             self.adu.log(
                 f"No valid temperature values from sensor {entity}: {error}",
@@ -86,14 +86,14 @@ class NotiFreeze(hass.Hass):  # type: ignore
         ):
 
             # door/window opened, schedule reminder/notification
-            self.handles[entity] = self.run_in(
+            self.handles[entity] = await self.run_in(
                 self.notification,
                 self.cfg["initial_delay"] * self.SECONDS_PER_MIN,
                 entity_id=entity,
             )
 
             self.adu.log(
-                f"\033[1m{self.friendly_name(entity)}\033[0m opened, "
+                f"\033[1m{await self.friendly_name(entity)}\033[0m opened, "
                 f"\033[1m{difference:+.1f}°C\033[0m → "
                 f"reminder in \033[1m{self.cfg['initial_delay']}min\033[0m",
                 icon=APP_ICON,
@@ -101,15 +101,15 @@ class NotiFreeze(hass.Hass):  # type: ignore
 
         elif old == "on" and new == "off" and entity in self.handles:
             # door/window closed, stopping scheduled timer
-            self.kill_timer(entity)
+            await self.kill_timer(entity)
 
-    def notification(self, kwargs: Dict[str, Any]) -> None:
+    async def notification(self, kwargs: Dict[str, Any]) -> None:
         """Send notification."""
         entity: str = kwargs["entity_id"]
         counter: int = int(kwargs.get("counter", 1))
 
         try:
-            indoor, outdoor, difference = self.get_temperatures(entity)
+            indoor, outdoor, difference = await self.get_temperatures(entity)
         except (ValueError, TypeError) as error:
             self.adu.log(
                 f"No valid temperature values to calculate difference: {error}",
@@ -121,13 +121,13 @@ class NotiFreeze(hass.Hass):  # type: ignore
         # check if all required conditions still met, then processing with notification
         if (
             abs(difference) > float(self.cfg["max_difference"])
-            and self.get_state(entity) == "on"
+            and await self.get_state(entity) == "on"
             and entity != "binary_sensor.door_window_sensor_basement_window"
         ):
 
             # exact state-change time but not relative/readable time
             last_changed = dt.fromisoformat(
-                self.get_state(entity, attribute="last_changed")
+                await self.get_state(entity, attribute="last_changed")
             )
 
             # calculate timedelta
@@ -141,19 +141,19 @@ class NotiFreeze(hass.Hass):  # type: ignore
 
             # build notification/log message
             message = (
-                f"{self.friendly_name(entity)} seit {open_since} offen!\n"
+                f"{await self.friendly_name(entity)} seit {open_since} offen!\n"
                 f"\033[1m{difference:+.1f}°C\033[0m → "
-                f"{self.friendly_name(self.sensors[entity])}: {indoor:.1f}°C"
+                f"{await self.friendly_name(self.sensors[entity])}: {indoor:.1f}°C"
             )
 
             # send notification
-            self.call_service(
+            await self.call_service(
                 str(self.cfg["notify_service"]).replace(".", "/"),
                 message=re.sub(r"\033\[\dm", "", message),
             )
 
             # schedule next reminder
-            self.handles[entity] = self.run_in(
+            self.handles[entity] = await self.run_in(
                 self.notification,
                 self.cfg["reminder_delay"] * self.SECONDS_PER_MIN,
                 entity_id=entity,
@@ -169,19 +169,19 @@ class NotiFreeze(hass.Hass):  # type: ignore
 
         elif entity in self.handles:
             # temperature difference below/above allowed threshold
-            self.kill_timer(entity)
+            await self.kill_timer(entity)
 
-    def kill_timer(self, entity: str) -> None:
+    async def kill_timer(self, entity: str) -> None:
         """Cancel scheduled task/timers."""
         if self.handles[entity]:
-            self.cancel_timer(self.handles[entity])
+            await self.cancel_timer(self.handles[entity])
             self.adu.log(
-                f"\033[1m{self.friendly_name(entity)}\033[0m closed → timer stopped",
+                f"\033[1m{await self.friendly_name(entity)}\033[0m closed → timer stopped",
                 icon=APP_ICON,
             )
 
-    def get_temperatures(self, entity: str) -> Sequence[float]:
+    async def get_temperatures(self, entity: str) -> Sequence[float]:
         """Get temperature indoor, outdoor and the abs. difference of both."""
-        indoor = float(self.get_state(self.sensors[entity], default=STATE_UNKNOWN))
-        outdoor = float(self.get_state(self.sensor_outdoor, default=STATE_UNKNOWN))
+        indoor = float(await self.get_state(self.sensors[entity], default=STATE_UNKNOWN))
+        outdoor = float(await self.get_state(self.sensor_outdoor, default=STATE_UNKNOWN))
         return (indoor, outdoor, outdoor - indoor)
