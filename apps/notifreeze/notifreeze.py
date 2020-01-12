@@ -1,6 +1,6 @@
 """Notifreeze notifies about windows which should be closed.
 
-    @benleb / https://github.com/benleb/appdaemon-healthcheck
+    @benleb / https://github.com/benleb/ad-notifreeze
 
 notifreeze:
   module: notifreeze
@@ -12,8 +12,8 @@ import re
 from datetime import datetime as dt
 from typing import Any, Dict, Sequence
 
-import adutils
 import hassapi as hass
+from adutils import ADutils, hl
 
 APP_NAME = "NotiFreeze"
 APP_ICON = "❄️ "
@@ -22,11 +22,11 @@ APP_VERSION = "0.4.4"
 # state set by home assistant if entity exists but no state
 STATE_UNKNOWN = "unknown"
 
+SECONDS_PER_MIN: int = 60
+
 
 class NotiFreeze(hass.Hass):  # type: ignore
     """Notifies about windows which should be closed."""
-
-    SECONDS_PER_MIN: int = 60
 
     async def initialize(self) -> None:
         """Set up state listener."""
@@ -61,7 +61,7 @@ class NotiFreeze(hass.Hass):  # type: ignore
             self.cfg.setdefault("_prefixes", dict(max_difference="±"))
 
             # init adutils
-            self.adu = adutils.ADutils(
+            self.adu = ADutils(
                 APP_NAME, self.cfg, icon=APP_ICON, ad=self, show_config=True
             )
 
@@ -79,23 +79,24 @@ class NotiFreeze(hass.Hass):  # type: ignore
             )
             return
 
-        if (
-            old == "off"
-            and new == "on"
-            and abs(difference) > float(self.cfg["max_difference"])
+        if all(
+            [
+                old == "off",
+                new == "on",
+                abs(difference) > float(self.cfg["max_difference"]),
+            ]
         ):
-
             # door/window opened, schedule reminder/notification
             self.handles[entity] = await self.run_in(
                 self.notification,
-                self.cfg["initial_delay"] * self.SECONDS_PER_MIN,
+                self.cfg["initial_delay"] * SECONDS_PER_MIN,
                 entity_id=entity,
             )
 
             self.adu.log(
-                f"\033[1m{await self.friendly_name(entity)}\033[0m opened, "
-                f"\033[1m{difference:+.1f}°C\033[0m → "
-                f"reminder in \033[1m{self.cfg['initial_delay']}min\033[0m",
+                f"{hl(await self.friendly_name(entity))} opened, "
+                f"{hl(f'{difference:+.1f}°C')} → "
+                f"reminder in {self.cfg['initial_delay']}min\033[0m",
                 icon=APP_ICON,
             )
 
@@ -118,11 +119,12 @@ class NotiFreeze(hass.Hass):  # type: ignore
             )
             return
 
-        # check if all required conditions still met, then processing with notification
-        if (
-            abs(difference) > float(self.cfg["max_difference"])
-            and await self.get_state(entity) == "on"
-            and entity != "binary_sensor.door_window_sensor_basement_window"
+        if all(
+            [
+                abs(difference) > float(self.cfg["max_difference"]),
+                await self.get_state(entity) == "on",
+                entity != "binary_sensor.door_window_sensor_basement_window",
+            ]
         ):
 
             # exact state-change time but not relative/readable time
@@ -134,15 +136,15 @@ class NotiFreeze(hass.Hass):  # type: ignore
             opened_ago = dt.now().astimezone() - last_changed.astimezone()
 
             # append suitable unit
-            if opened_ago.seconds >= 60:
-                open_since = f"{int(opened_ago.seconds / 60)}min"
+            if opened_ago.seconds >= SECONDS_PER_MIN:
+                open_since = f"{int(opened_ago.seconds / SECONDS_PER_MIN)}min"
             else:
                 open_since = f"{int(opened_ago.seconds)}sec"
 
             # build notification/log message
             message = (
                 f"{await self.friendly_name(entity)} seit {open_since} offen!\n"
-                f"\033[1m{difference:+.1f}°C\033[0m → "
+                f"{hl(f'{difference:+.1f}°C')} → "
                 f"{await self.friendly_name(self.sensors[entity])}: {indoor:.1f}°C"
             )
 
@@ -155,7 +157,7 @@ class NotiFreeze(hass.Hass):  # type: ignore
             # schedule next reminder
             self.handles[entity] = await self.run_in(
                 self.notification,
-                self.cfg["reminder_delay"] * self.SECONDS_PER_MIN,
+                self.cfg["reminder_delay"] * SECONDS_PER_MIN,
                 entity_id=entity,
                 counter=counter + 1,
             )
@@ -176,12 +178,16 @@ class NotiFreeze(hass.Hass):  # type: ignore
         if self.handles[entity]:
             await self.cancel_timer(self.handles[entity])
             self.adu.log(
-                f"\033[1m{await self.friendly_name(entity)}\033[0m closed → timer stopped",
+                f"{hl(await self.friendly_name(entity))} closed → timer stopped",
                 icon=APP_ICON,
             )
 
     async def get_temperatures(self, entity: str) -> Sequence[float]:
         """Get temperature indoor, outdoor and the abs. difference of both."""
-        indoor = float(await self.get_state(self.sensors[entity], default=STATE_UNKNOWN))
-        outdoor = float(await self.get_state(self.sensor_outdoor, default=STATE_UNKNOWN))
+        indoor = float(
+            await self.get_state(self.sensors[entity], default=STATE_UNKNOWN)
+        )
+        outdoor = float(
+            await self.get_state(self.sensor_outdoor, default=STATE_UNKNOWN)
+        )
         return (indoor, outdoor, outdoor - indoor)
