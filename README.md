@@ -51,7 +51,7 @@ notifreeze:
       door_window: binary_sensor.door_window_sensor_basement_window
       indoor:
         - sensor.temperature_basement
-        - binary_sensor.door_window_sensor_basement_window
+        - sensor.temperature_basement_front
 ```
 
 ### Available Options
