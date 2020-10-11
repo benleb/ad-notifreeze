@@ -4,7 +4,7 @@
     @benleb / https://github.com/benleb/ad-notifreeze
 """
 
-__version__ = "0.4.4"
+__version__ = "0.5.0"
 
 import re
 
