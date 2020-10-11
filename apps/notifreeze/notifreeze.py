@@ -24,7 +24,6 @@ APP_ICON = "❄️ "
 STATE_UNKNOWN = "unknown"
 
 SECONDS_PER_MIN: int = 60
-LGY_INTERVAL: int = 60
 
 # default values
 DEFAULT_MAX_DIFFERENCE = 5.0
@@ -57,7 +56,7 @@ async def get_timestring(last_changed: datetime) -> str:
     opened_ago = datetime.now().astimezone() - last_changed.astimezone()
 
     opened_ago_min, opened_ago_sec = divmod(
-        (datetime.now().astimezone() - last_changed.astimezone()).total_seconds(), 60.0
+        (datetime.now().astimezone() - last_changed.astimezone()).total_seconds(), float(SECONDS_PER_MIN)
     )
 
     # append suitable unit
@@ -74,11 +73,14 @@ async def get_timestring(last_changed: datetime) -> str:
 
 @dataclass
 class Room:
-    """Class for keeping track every room."""
+    """Class for keeping track a room."""
 
     name: str
-    indoor: Set[str]
+    # door/window sensors of a room
     door_window: Set[str]
+    # temperature sensors of a room
+    indoor: Set[str]
+    # reminder notification callback handles
     handles: Dict[str, str] = field(default_factory=dict)
 
 
@@ -123,6 +125,9 @@ class NotiFreeze(hass.Hass):  # type: ignore
         # general notification
         self.notify_service = str(self.args.pop("notify_service")).replace(".", "/")
 
+        # notify eveb when indoor temperature is not changing
+        self.always_notify = bool(self.args.pop("notify_service", False))
+
         # max difference outdoor - indoor
         self.max_difference = float(self.args.pop("max_difference", DEFAULT_MAX_DIFFERENCE))
 
@@ -144,39 +149,37 @@ class NotiFreeze(hass.Hass):  # type: ignore
 
         if rooms := self.args.pop("rooms"):
 
-            for configured_room in rooms:
+            for room_config in rooms:
 
                 room_name: str = str()
-                sensors_door_window: Set[str] = set()
-                sensors_indoor: Set[str] = set()
+
+                # door/window sensors of a room
+                door_window: Set[str] = set()
+                # temperature sensors of a room
+                indoor: Set[str] = set()
 
                 #  very hacky, needs refactoring
-                if isinstance(configured_room, dict):
-                    room_name = configured_room.pop("name").capitalize()
-                    room_alias = configured_room.pop("alias", room_name)
-                    sensors_door_window.update(
+                if isinstance(room_config, dict):
+                    room_name = room_config.pop("name").capitalize()
+                    room_alias = room_config.pop("alias", room_name)
+                    door_window.update(
                         self.listr(
-                            configured_room.pop("door_window", await self.find_sensors(KEYWORD_DOOR_WINDOW, room_alias))
+                            room_config.pop("door_window", await self.find_sensors(KEYWORD_DOOR_WINDOW, room_alias))
                         )
                     )
-                    sensors_indoor.update(
-                        self.listr(
-                            configured_room.pop("indoor", await self.find_sensors(KEYWORD_TEMPERATURE, room_alias))
-                        )
+                    indoor.update(
+                        self.listr(room_config.pop("indoor", await self.find_sensors(KEYWORD_TEMPERATURE, room_alias)))
                     )
 
-                elif isinstance(configured_room, str):
-                    room_name = room_alias = configured_room.capitalize()
-                    sensors_door_window.update(await self.find_sensors(KEYWORD_DOOR_WINDOW, room_alias))
-                    sensors_indoor.update(await self.find_sensors(KEYWORD_TEMPERATURE, room_alias))
+                elif isinstance(room_config, str):
+                    room_name = room_alias = room_config.capitalize()
+                    door_window.update(await self.find_sensors(KEYWORD_DOOR_WINDOW, room_alias))
+                    indoor.update(await self.find_sensors(KEYWORD_TEMPERATURE, room_alias))
 
-                # enumerate sensors for motion detection
-                room = Room(
-                    name=room_name,
-                    door_window=self.listr(sensors_door_window),
-                    indoor=self.listr(sensors_indoor),
-                )
+                # create room
+                room = Room(name=room_name, door_window=self.listr(door_window), indoor=self.listr(indoor))
 
+                # create state listener for all door/window sensors
                 if room.door_window and room.indoor:
                     for entity in room.door_window:
                         if self.entity_exists(entity):
@@ -211,6 +214,7 @@ class NotiFreeze(hass.Hass):  # type: ignore
             {
                 "max_difference": self.max_difference,
                 "notify_service": self.notify_service.replace("/", "."),
+                "always_notify": self.always_notify,
                 "sensors_outdoor": self.sensors_outdoor,
                 "delays": {"initial": self.initial_delay, "reminder": self.reminder_delay},
                 **self.rooms,
@@ -246,7 +250,7 @@ class NotiFreeze(hass.Hass):  # type: ignore
 
             self.lg(
                 f"{room.name} {hl(await self.fname(entity, room))} opened, "
-                f"{hl(f'{difference:+.1f}°C')} → reminder in {self.initial_delay}min\033[0m",
+                f"{hl(f'{difference:+.1f}°C')} → reminder in {hl(self.initial_delay)}min\033[0m",
                 icon=APP_ICON,
             )
 
@@ -270,23 +274,27 @@ class NotiFreeze(hass.Hass):  # type: ignore
 
             # build notification/log msg
             initial: float = kwargs.get("initial", indoor)
-            message = await self.create_message(room, entity_id, indoor, initial)
+            indoor_difference: float = indoor - initial
 
-            # send notification
-            await self.call_service(self.notify_service, message=re.sub(r"\033\[\dm", "", message))
+            if abs(indoor_difference) > 0 or self.always_notify:
 
-            # schedule next reminder
-            room.handles[entity_id] = await self.run_in(
-                self.notification,
-                self.reminder_delay * SECONDS_PER_MIN,
-                entity_id=entity_id,
-                room=room,
-                initial=initial,
-                counter=counter + 1,
-            )
+                message = await self.create_message(room, entity_id, indoor, initial)
 
-            # debug
-            self.lg(f"notification to {self.notify_service}: {message}", icon=APP_ICON, level="DEBUG")
+                # send notification
+                await self.call_service(self.notify_service, message=re.sub(r"\033\[\dm", "", message))
+
+                # schedule next reminder
+                room.handles[entity_id] = await self.run_in(
+                    self.notification,
+                    self.reminder_delay * SECONDS_PER_MIN,
+                    entity_id=entity_id,
+                    room=room,
+                    initial=initial,
+                    counter=counter + 1,
+                )
+
+                # debug
+                self.lg(f"notification to {self.notify_service}: {message}", icon=APP_ICON)
 
         elif entity_id in room.handles:
             # temperature difference in allowed thresholds, cancelling scheduled callbacks
@@ -306,7 +314,7 @@ class NotiFreeze(hass.Hass):  # type: ignore
         indoor_difference: float = indoor - initial
         message: str = f"{room.name} {hl(await self.fname(entity_id, room))} open since {open_since}: {initial:.1f}°C"
         if indoor != initial:
-            message = message + f" → {indoor} ({hl(f'{indoor_difference:+.1f}°C')})"
+            message = message + f" → {indoor:.1f}°C ({hl(f'{indoor_difference:+.1f}°C')})"
 
         return message
 
