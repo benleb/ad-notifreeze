@@ -21,12 +21,13 @@ Use [HACS](https://github.com/hacs/integration) or [download](https://github.com
 
 If sensors entities have an ***entity id*** matching:
 
-* ***binary_sensor.door_window_`*`***
+* ***binary_sensor.door_window_`*`***  
+  **or**
 * ***sensor.temperature_`*`***
 
 **and**
 
-* an ***entity id*** or ***friendly name*** containing the **`room`**/**`room`** name:
+* an ***entity id*** or ***friendly name*** containing the **`room`**/**`room`** name
 
 **NotiFreeze** will detect them automatically. (Manually configured entities will take precedence.)
 
@@ -37,6 +38,7 @@ notifreeze:
   module: notifreeze
   class: NotiFreeze
   notify_service: notify.mobile_app_ben
+  always_notify: true
   outdoor: sensor.temperature_outdoor
   max_difference: 4.2
   delays:
@@ -61,6 +63,7 @@ key | optional | type | default | description
 `module` | False | string | notifreeze | The module name of the app.
 `class` | False | string | Notifreeze | The name of the Class.
 `notify_service` | False | string | | Home Assistant notification service
+`always_notify` | True | bool | false | Send notifications even when the indoor temperature is unchanged (compared to before the door/windows was open)
 `outdoor` | False | string | | Sensor for outside temperature
 `max_difference` | True | float | 5 | Maximum tolerated tmperature difference
 `rooms` | False | list<string, [**room**](#room)> | | List of [**rooms**](#room) or simple *room* names NotiFreeze will monitor. Users of the famous [AutoMoLi](https://github.com/benleb/ad-automoli) may already by familiar with the *rooms* concept.
