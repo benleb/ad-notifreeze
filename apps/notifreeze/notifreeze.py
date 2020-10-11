@@ -37,6 +37,7 @@ KEYWORD_TEMPERATURE = "sensor.temperature_"
 py3_or_higher = version_info.major >= 3
 py37_or_higher = py3_or_higher and version_info.minor >= 7
 py38_or_higher = py3_or_higher and version_info.minor >= 8
+py39_or_higher = py3_or_higher and version_info.minor >= 9
 
 
 def hl(text: Union[int, float, str]) -> str:
@@ -116,7 +117,7 @@ class NotiFreeze(hass.Hass):  # type: ignore
             icon_alert = "⚠️"
             self.lg("", icon=icon_alert)
             self.lg("")
-            self.lg(f" please update to {hl('Python >= 3.8')}! 🤪", icon=icon_alert)
+            self.lg(f" please update to {hl('Python >= 3.9')} (or >= 3.8 at least)! 🤪", icon=icon_alert)
             self.lg("")
             self.lg("", icon=icon_alert)
         if not py37_or_higher:
@@ -189,21 +190,17 @@ class NotiFreeze(hass.Hass):  # type: ignore
 
                 self.rooms[room.name] = room
 
-        # requirements check
-        if not self.notify_service or not self.sensors_outdoor:
+        # requirements checks
+        if not all([self.notify_service, self.sensors_outdoor]):
             self.lg("")
-            # self.lg(
-            #     f"{hl('No lights/sensors')} given and none found with name: "
-            #     f"'{hl(KEYWORD_LIGHTS)}*{hl(self.room)}*' or '{hl(KEYWORD_MOTION)}*{hl(self.room)}*'",
-            #     icon="⚠️ ",
-            # )
-            self.lg("")
-            self.lg(f"{self.notify_service = }")
-            self.lg(f"{await self.entity_exists(self.notify_service) = }")
-            # self.lg(f"{await self.entity_exists(self.sensor_outdoor) = }")
+            if not self.notify_service or not self.sensors_outdoor:
+                self.lg(f"No {hl('notify_service')} configured!", icon="⚠️ ")
+            if not self.sensors_outdoor:
+                self.lg(f"No {hl('outdoor')} sensors configured!", icon="⚠️ ")
             self.lg("")
             self.lg("  docs: https://github.com/benleb/ad-notifreeze")
             self.lg("")
+
             return
 
         # set units
