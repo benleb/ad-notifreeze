@@ -1,0 +1,29 @@
+github_url = "https://github.com/benleb/ad-notifreeze"
+
+[version]
+current = "0.4.4"
+# semver regexp
+regex = '(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)'
+
+[git]
+message_template = "bump to {new_version}"
+tag_template = "v{new_version}"
+
+# files to patch relative to the tbump.toml location
+[[file]]
+src = "apps/*/*.py"
+
+
+# You can specify a list of commands to
+# run after the files have been patched
+# and before the git commit is made
+
+#  [[before_commit]]
+#  name = "check changelog"
+#  cmd = "grep -q {new_version} Changelog.rst"
+
+# Or run some commands after the git tag and the branch
+# have been pushed:
+#  [[after_push]]
+#  name = "publish"
+#  cmd = "./publish.sh"
