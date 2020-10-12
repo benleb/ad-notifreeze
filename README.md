@@ -74,7 +74,7 @@ key | optional | type | default | description
 key | optional | type | default | description
 -- | -- | -- | -- | --
 `name` | True | string | | Name of the room (used for auto-discovery if no *alias* is set)
-`alias` | True | integer | | Alias used for auto-discovery of sensors (if your entity IDs not contain your *room*, this *alias* can be used)
+`alias` | True | string | | Alias used for auto-discovery of sensors (if your entity IDs not contain your *room*, this *alias* can be used)
 `indoor` | True | string, list<string> | | Temperature sensor Entity ID(s)
 `door_window` | True | string, list<string> | | Door/Windows sensor Entity ID(s)
 
