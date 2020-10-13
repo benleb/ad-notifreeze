@@ -127,7 +127,7 @@ class NotiFreeze(hass.Hass):  # type: ignore
         self.notify_service = str(self.args.pop("notify_service")).replace(".", "/")
 
         # notify eveb when indoor temperature is not changing
-        self.always_notify = bool(self.args.pop("notify_service", False))
+        self.always_notify = bool(self.args.pop("always_notify", False))
 
         # max difference outdoor - indoor
         self.max_difference = float(self.args.pop("max_difference", DEFAULT_MAX_DIFFERENCE))
@@ -226,6 +226,8 @@ class NotiFreeze(hass.Hass):  # type: ignore
 
         room: Room = kwargs.pop("room")
 
+        self.lg(f"state change in {room.name} via {await self.fname(entity, room)}: {old} -> {new}", level="DEBUG")
+
         try:
             indoor, outdoor, difference = await self.get_temperatures(room)
         except ValueError as error:
@@ -261,17 +263,33 @@ class NotiFreeze(hass.Hass):  # type: ignore
         entity_id: str = kwargs["entity_id"]
         counter: int = int(kwargs.get("counter", 1))
 
+        self.lg(
+            f"notification for {room.name} triggered via {await self.fname(entity_id, room)} ({counter})", level="DEBUG"
+        )
+
         try:
             indoor, outdoor, difference = await self.get_temperatures(room)
         except (ValueError, TypeError) as error:
             self.lg(f"No valid temperature values to calculate difference: {error}", icon=APP_ICON, level="ERROR")
             return
 
+        self.lg(
+            f"notification for {room.name} via {await self.fname(entity_id, room)}: "
+            f"{indoor = } - {outdoor = } = {difference = }",
+            level="DEBUG",
+        )
+
         if abs(difference) > float(self.max_difference) and await self.get_state(entity_id) == "on":
 
             # build notification/log msg
             initial: float = kwargs.get("initial", indoor)
             indoor_difference: float = indoor - initial
+
+            self.lg(
+                f"notification for {room.name} via {await self.fname(entity_id, room)}: "
+                f"{indoor = } - {initial = } = {indoor_difference = }",
+                level="DEBUG",
+            )
 
             if abs(indoor_difference) > 0 or self.always_notify:
 
