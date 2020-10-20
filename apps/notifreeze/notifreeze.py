@@ -8,14 +8,14 @@ __version__ = "0.5.1"
 
 import re
 
-from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pprint import pformat
 from statistics import fmean
 from sys import version_info
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Union
+from typing import Any, Dict, Iterable, List, Optional, Set, Union
 
 import hassapi as hass
+
 
 APP_NAME = "NotiFreeze"
 APP_ICON = "❄️ "
@@ -62,7 +62,7 @@ async def get_timestring(last_changed: datetime) -> str:
 
     # append suitable unit
     if opened_ago.total_seconds() >= SECONDS_PER_MIN:
-        if opened_ago_sec < 10:
+        if opened_ago_sec < 10 or opened_ago_sec > 50:
             open_since = f"{hl(int(opened_ago_min))}min"
         else:
             open_since = f"{hl(int(opened_ago_min))}min {hl(int(opened_ago_sec))}sec"
@@ -72,17 +72,35 @@ async def get_timestring(last_changed: datetime) -> str:
     return open_since
 
 
-@dataclass
 class Room:
-    """Class for keeping track a room."""
+    """Class for keeping track of a room."""
 
-    name: str
-    # door/window sensors of a room
-    door_window: Set[str]
-    # temperature sensors of a room
-    indoor: Set[str]
-    # reminder notification callback handles
-    handles: Dict[str, str] = field(default_factory=dict)
+    def __init__(
+        self,
+        name: str,
+        door_window: Set[str],
+        temperature: Set[str],
+    ) -> None:
+
+        self.name: str = name
+        # door/window sensors of a room
+        self.door_window: Set[str] = door_window
+        # temperature sensors of a room
+        self.temperature: Set[str] = temperature
+        # reminder notification callback handles
+        self.handles: Dict[str, str] = {}
+
+    async def indoor(self, nf: Any) -> float:
+        if indoor := [float(await nf.get_state(sensor)) for sensor in self.temperature]:
+            return fmean(indoor)
+        else:
+            raise ValueError
+
+    async def difference(self, outdoor: float, nf: Any) -> float:
+        if indoor := await self.indoor(nf):
+            return round(outdoor - indoor, 2)
+        else:
+            raise ValueError
 
 
 class NotiFreeze(hass.Hass):  # type: ignore
@@ -104,6 +122,9 @@ class NotiFreeze(hass.Hass):  # type: ignore
             self.lg(f"{list_or_string} is of type {type(list_or_string)} and not 'Union[List[str], Set[str], str]'")
 
         return set(filter(self.entity_exists, entity_list) if entities_exist else entity_list)
+
+    async def outdoor(self) -> float:
+        return fmean([float(await self.get_state(sensor)) for sensor in self.sensors_outdoor])
 
     async def initialize(self) -> None:
         """Initialize a room with NotiFreeze."""
@@ -145,6 +166,9 @@ class NotiFreeze(hass.Hass):  # type: ignore
         # outdoor temperature sensors
         self.sensors_outdoor = self.listr(self.args.pop("outdoor"))
 
+        # entity list
+        states = await self.get_state()
+
         # set room(s)
         self.rooms: Dict[str, Room] = {}
 
@@ -165,30 +189,36 @@ class NotiFreeze(hass.Hass):  # type: ignore
                     room_alias = room_config.pop("alias", room_name)
                     door_window.update(
                         self.listr(
-                            room_config.pop("door_window", await self.find_sensors(KEYWORD_DOOR_WINDOW, room_alias))
+                            room_config.pop(
+                                "door_window", await self.find_sensors(KEYWORD_DOOR_WINDOW, room_alias, states=states)
+                            )
                         )
                     )
                     indoor.update(
-                        self.listr(room_config.pop("indoor", await self.find_sensors(KEYWORD_TEMPERATURE, room_alias)))
+                        self.listr(
+                            room_config.pop(
+                                "indoor", await self.find_sensors(KEYWORD_TEMPERATURE, room_alias, states=states)
+                            )
+                        )
                     )
 
                 elif isinstance(room_config, str):
                     room_name = room_alias = room_config.capitalize()
-                    door_window.update(await self.find_sensors(KEYWORD_DOOR_WINDOW, room_alias))
-                    indoor.update(await self.find_sensors(KEYWORD_TEMPERATURE, room_alias))
+                    door_window.update(await self.find_sensors(KEYWORD_DOOR_WINDOW, room_alias, states=states))
+                    indoor.update(await self.find_sensors(KEYWORD_TEMPERATURE, room_alias, states=states))
 
                 # create room
-                room = Room(name=room_name, door_window=self.listr(door_window), indoor=self.listr(indoor))
+                room = Room(name=room_name, door_window=self.listr(door_window), temperature=self.listr(indoor))
 
                 # create state listener for all door/window sensors
-                if room.door_window and room.indoor:
+                if room.door_window and room.temperature:
                     for entity in room.door_window:
                         if self.entity_exists(entity):
                             await self.listen_state(self.handler, entity=entity, room=room)
                 else:
                     continue
 
-                self.rooms[room.name] = room
+                self.rooms[room_name] = room
 
         # requirements checks
         if not all([self.notify_service, self.sensors_outdoor]):
@@ -226,128 +256,114 @@ class NotiFreeze(hass.Hass):  # type: ignore
 
         room: Room = kwargs.pop("room")
 
-        self.lg(f"state change in {room.name} via {await self.fname(entity, room)}: {old} -> {new}", level="DEBUG")
+        self.lg(f"state change in {room.name} via {await self.fname(entity, room.name)}: {old} -> {new}", level="DEBUG")
 
-        try:
-            indoor, outdoor, difference = await self.get_temperatures(room)
-        except ValueError as error:
-            self.lg(
-                f"Sensor {hl(entity)} is currently unavailable, retrying later...\n{error}",
-                icon=APP_ICON,
-                level="WARNING",
-            )
-            return
-        except TypeError as error:
-            self.lg(f"No valid temperature values from sensor {entity}: {error}", icon=APP_ICON, level="ERROR")
-            return
+        if old == "off" and new == "on" and (difference := await room.difference(await self.outdoor(), self)):
 
-        if all([old == "off", new == "on", abs(difference) > float(self.max_difference)]):
-            # door/window opened, schedule reminder/notification
-            room.handles[entity] = await self.run_in(
-                self.notification, self.initial_delay * SECONDS_PER_MIN, entity_id=entity, room=room
-            )
+            if abs(difference) > float(self.max_difference):
 
-            self.lg(
-                f"{room.name} {hl(await self.fname(entity, room))} opened, "
-                f"{hl(f'{difference:+.1f}°C')} → reminder in {hl(self.initial_delay)}min\033[0m",
-                icon=APP_ICON,
-            )
+                # door/window opened, schedule reminder/notification
+                room.handles[entity] = await self.run_in(
+                    self.notification, self.initial_delay * SECONDS_PER_MIN, entity_id=entity, room=room
+                )
 
-        elif old == "on" and new == "off" and entity in room.handles:
+                self.lg(
+                    f"{room.name} {hl(await self.fname(entity, room.name))} opened, "
+                    f"{hl(f'{difference:+.1f}°C')} → reminder in {hl(self.initial_delay)}min\033[0m",
+                    icon=APP_ICON,
+                )
+
+        elif old == "on" and new == "off":
             # door/window closed, canceling scheduled callbacks
             await self.clear_handles(room, entity)
 
     async def notification(self, kwargs: Dict[str, Any]) -> None:
         """Send notification."""
-        room: Room = kwargs["room"]
+        room: Room = kwargs.pop("room")
         entity_id: str = kwargs["entity_id"]
         counter: int = int(kwargs.get("counter", 1))
 
         self.lg(
-            f"notification for {room.name} triggered via {await self.fname(entity_id, room)} ({counter})", level="DEBUG"
-        )
-
-        try:
-            indoor, outdoor, difference = await self.get_temperatures(room)
-        except (ValueError, TypeError) as error:
-            self.lg(f"No valid temperature values to calculate difference: {error}", icon=APP_ICON, level="ERROR")
-            return
-
-        self.lg(
-            f"notification for {room.name} via {await self.fname(entity_id, room)}: "
-            f"{indoor = } - {outdoor = } = {difference = }",
+            f"notification for {room.name} triggered via {await self.fname(entity_id, room.name)} ({counter})",
             level="DEBUG",
         )
 
-        if abs(difference) > float(self.max_difference) and await self.get_state(entity_id) == "on":
+        if outdoor := await self.outdoor():
 
-            # build notification/log msg
-            initial: float = kwargs.get("initial", indoor)
-            indoor_difference: float = indoor - initial
+            indoor = await room.indoor(self)
+            difference = await room.difference(outdoor, self)
 
-            self.lg(
-                f"notification for {room.name} via {await self.fname(entity_id, room)}: "
-                f"{indoor = } - {initial = } = {indoor_difference = }",
-                level="DEBUG",
-            )
+            if abs(difference) > float(self.max_difference) and await self.get_state(entity_id) == "on":
 
-            if abs(indoor_difference) > 0 or self.always_notify:
+                # build notification/log msg
+                initial: float = float(kwargs.get("initial", indoor))
+                indoor_difference: float = indoor - initial
 
-                message = await self.create_message(room, entity_id, indoor, initial)
-
-                # send notification
-                await self.call_service(self.notify_service, message=re.sub(r"\033\[\dm", "", message))
-
-                # schedule next reminder
-                room.handles[entity_id] = await self.run_in(
-                    self.notification,
-                    self.reminder_delay * SECONDS_PER_MIN,
-                    entity_id=entity_id,
-                    room=room,
-                    initial=initial,
-                    counter=counter + 1,
+                self.lg(
+                    f"notification for {room.name} via {await self.fname(entity_id, room.name)}: "
+                    f"{indoor = } - {initial = } = {indoor_difference = }",
+                    level="DEBUG",
                 )
 
-                # debug
-                self.lg(f"notification to {self.notify_service}: {message}", icon=APP_ICON)
+                if abs(indoor_difference) > 0 or self.always_notify:
 
-        elif entity_id in room.handles:
-            # temperature difference in allowed thresholds, cancelling scheduled callbacks
-            await self.clear_handles(room, entity_id)
+                    message = await self.create_message(room, entity_id, indoor, initial)
 
-    async def find_sensors(self, keyword: str, room: str) -> List[str]:
+                    # send notification
+                    await self.call_service(self.notify_service, message=re.sub(r"\033\[\dm", "", message))
+
+                    # schedule next reminder
+                    room.handles[entity_id] = await self.run_in(
+                        self.notification,
+                        self.reminder_delay * SECONDS_PER_MIN,
+                        entity_id=entity_id,
+                        room=room,
+                        initial=initial,
+                        counter=counter + 1,
+                    )
+
+                    # debug
+                    self.lg(f"notification to {self.notify_service}: {message}", icon=APP_ICON)
+
+            elif entity_id in room.handles:
+                # temperature difference in allowed thresholds, cancelling scheduled callbacks
+                await self.clear_handles(room, entity_id)
+
+    async def find_sensors(self, keyword: str, room_name: str, states: Any = None) -> List[str]:
         """Find sensors by looking for a keyword in the friendly_name."""
+        states = states if states else await self.get_state()
+        room_name = room_name.lower()
         return [
             sensor
-            for sensor in await self.get_state()
-            if (keyword in sensor and room.lower() in (await self.friendly_name(sensor)).lower())
-            or (keyword in sensor and room.lower() in sensor.lower())
+            for sensor in states
+            if (keyword in sensor and room_name in (await self.friendly_name(sensor)).lower())
+            or (keyword in sensor and room_name in sensor.lower())
         ]
 
     async def create_message(self, room: Room, entity_id: str, indoor: float, initial: float) -> str:
+        # room: Any = self.rooms[room_name]
         open_since = await get_timestring(await self.get_state(entity_id, attribute="last_changed"))
         indoor_difference: float = indoor - initial
-        message: str = f"{room.name} {hl(await self.fname(entity_id, room))} open since {open_since}: {initial:.1f}°C"
+        message: str = (
+            f"{room.name} {hl(await self.fname(entity_id, room.name))} open since {open_since}: {initial:.1f}°C"
+        )
         if indoor != initial:
             message = message + f" → {indoor:.1f}°C ({hl(f'{indoor_difference:+.1f}°C')})"
 
         return message
 
-    async def fname(self, entity: str, room: Room) -> str:
+    async def fname(self, entity: str, room_name: str) -> str:
         """Return a new friendly name by stripping the room name of the orig. friendly name."""
-        return (await self.friendly_name(entity)).replace(room.name, "").strip()
+        return (await self.friendly_name(entity)).replace(room_name, "").strip()
 
     async def clear_handles(self, room: Room, entity: str) -> None:
         """clear scheduled timers/callbacks."""
-        if handle := room.handles.pop(entity):
+        if handle := room.handles.pop(entity, None):
             await self.cancel_timer(handle)
-            self.lg(f"{room.name} {hl(await self.fname(entity, room))} closed → timer stopped", icon=APP_ICON)
 
-    async def get_temperatures(self, room: Room) -> Sequence[float]:
-        """Get temperature indoor, outdoor and the abs. difference of both."""
-        indoor = fmean([float(await self.get_state(sensor)) for sensor in room.indoor])
-        outdoor = fmean([float(await self.get_state(sensor)) for sensor in self.sensors_outdoor])
-        return (indoor, outdoor, round(outdoor - indoor, 2))
+            self.lg(f"{room.name} {hl(await self.fname(entity, room.name))} closed → timer stopped", icon=APP_ICON)
+
+        room.handles.clear()
 
     def show_info(self, config: Optional[Dict[str, Any]] = None) -> None:
         # log loaded config
@@ -364,7 +380,7 @@ class NotiFreeze(hass.Hass):  # type: ignore
             room = f" · {hl(self.config['room'].capitalize())}"
 
         self.lg("")
-        self.lg(f"{hl(APP_NAME)}{room}", icon=self.icon)
+        self.lg(f"{hl(APP_NAME)} v{hl(__version__)}{room}", icon=self.icon)
         self.lg("")
 
         listeners = self.config.pop("listeners", None)
@@ -380,7 +396,7 @@ class NotiFreeze(hass.Hass):  # type: ignore
             elif isinstance(value, dict):
                 self.print_collection(key, value, 2)
             elif isinstance(value, Room):
-                self.print_collection(key, asdict(value), 2)
+                self.print_collection(key, value.__dict__, 2)
             else:
                 self._print_cfg_setting(key, value, 2)
 
@@ -392,6 +408,10 @@ class NotiFreeze(hass.Hass):  # type: ignore
         self.lg("")
 
     def print_collection(self, key: str, collection: Iterable[Any], indentation: int = 0) -> None:
+
+        if isinstance(collection, set) and len(collection) == 1:
+            self.lg(f"{indentation * ' '}{key.replace('_', ' ')}: {hl_entity(list(collection)[0])}")
+            return
 
         self.lg(f"{indentation * ' '}{key}:")
         indentation = indentation + 2
@@ -425,11 +445,15 @@ class NotiFreeze(hass.Hass):  # type: ignore
         unit = prefix = ""
         indent = indentation * " "
 
+        # hide "internal keys" when displaying config
+        if key.startswith("_"):
+            return
+
         # legacy way
         if key == "delay" and isinstance(value, int):
             unit = "min"
             min_value = f"{int(value / 60)}:{int(value % 60):02d}"
-            self.lg(f"{indent}{key}: {prefix}{hl(min_value)}{unit} ≈ " f"{hl(value)}sec", ascii_encode=False)
+            self.lg(f"{indent}{key.replace('_', ' ')}: {prefix}{hl(min_value)}{unit} ≈ " f"{hl(value)}sec")
 
         else:
             if "_units" in self.config and key in self.config["_units"]:
@@ -437,4 +461,4 @@ class NotiFreeze(hass.Hass):  # type: ignore
             if "_prefixes" in self.config and key in self.config["_prefixes"]:
                 prefix = self.config["_prefixes"][key]
 
-            self.lg(f"{indent}{key}: {prefix}{hl(value)}{unit}")
+            self.lg(f"{indent}{key.replace('_', ' ')}: {prefix}{hl(value)}{unit}")
