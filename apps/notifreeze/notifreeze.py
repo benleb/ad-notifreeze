@@ -149,6 +149,7 @@ class NotiFreeze(hass.Hass):  # type: ignore
 
         # notify eveb when indoor temperature is not changing
         self.always_notify = bool(self.args.pop("always_notify", False))
+        self.msgs = MSGS.get(self.args.pop("locale", "en_US"))
 
         # max difference outdoor - indoor
         self.max_difference = float(self.args.pop("max_difference", DEFAULT_MAX_DIFFERENCE))
@@ -342,15 +343,24 @@ class NotiFreeze(hass.Hass):  # type: ignore
 
     async def create_message(self, room: Room, entity_id: str, indoor: float, initial: float) -> str:
         # room: Any = self.rooms[room_name]
-        open_since = await get_timestring(await self.get_state(entity_id, attribute="last_changed"))
-        indoor_difference: float = indoor - initial
-        message: str = (
-            f"{room.name} {hl(await self.fname(entity_id, room.name))} open since {open_since}: {initial:.1f}°C"
-        )
-        if indoor != initial:
-            message = message + f" → {indoor:.1f}°C ({hl(f'{indoor_difference:+.1f}°C')})"
+        # open_since = await get_timestring(await self.get_state(entity_id, attribute="last_changed"))
+        # indoor_difference: float = indoor - initial
+        # message: str = (
+        #     f"{room.name} {hl(await self.fname(entity_id, room.name))} open since {open_since}: {initial:.1f}°C"
+        # )
+        # if indoor != initial:
+        #     message = message + f" → {indoor:.1f}°C ({hl(f'{indoor_difference:+.1f}°C')})"
 
-        return message
+        tpl = self.msgs["SINCE"] if indoor == initial else self.msgs["CHANGE"]
+
+        return tpl.format(
+            room_name=room.name,
+            entity_name=hl(await self.fname(entity_id, room.name)),
+            open_since=await get_timestring(await self.get_state(entity_id, attribute="last_changed")),
+            initial=initial,
+            indoor=indoor,
+            indoor_difference=indoor - initial,
+        )
 
     async def fname(self, entity: str, room_name: str) -> str:
         """Return a new friendly name by stripping the room name of the orig. friendly name."""
@@ -462,3 +472,21 @@ class NotiFreeze(hass.Hass):  # type: ignore
                 prefix = self.config["_prefixes"][key]
 
             self.lg(f"{indent}{key.replace('_', ' ')}: {prefix}{hl(value)}{unit}")
+
+
+# message translations
+
+# ids of available messages
+IDS = set(["SINCE", "CHANGE"])
+
+# translations with en_US as base
+MSGS: Dict[str, Dict[str, str]] = {
+    "en_US": {
+        "SINCE": "{room_name} {entity_name} open since {open_since}: {initial}°C",
+        "CHANGE": "{room_name} {entity_name} open since {open_since}: {initial}°C → {indoor}°C ({indoor_difference}°C)",
+    },
+    "de_DE": {
+        "SINCE": "{room_name} {entity_name} offen seit {open_since}: {initial}°C",
+        "CHANGE": "{room_name} {entity_name} offen seit {open_since}: {initial}°C → {indoor}°C ({indoor_difference}°C)",
+    },
+}

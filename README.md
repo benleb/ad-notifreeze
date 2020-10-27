@@ -69,6 +69,7 @@ key | optional | type | default | description
 `max_difference` | True | float | 5 | Maximum tolerated tmperature difference
 `rooms` | False | list<string, [**room**](#room)> | | List of [**rooms**](#room) or simple *room* names NotiFreeze will monitor. Users of the famous [AutoMoLi](https://github.com/benleb/ad-automoli) may already by familiar with the *rooms* concept.
 `delays` | True | [**delay**](#delays) | [**see below**](#delays) | Delays NotiFreeze will use.
+`locale` | True | string | `en_US` | Locale for notifications in native language. See bottom of [`notifreeze.py`](apps/notifreeze/notifreeze.py) for available ones or add one yourself
 
 ## room
 
