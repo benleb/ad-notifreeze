@@ -1,18 +1,16 @@
-# 🌡 🥶 NotiFreeze 🥵 🔥
+# NotiFreeze 🥶 🥵
 
 [![python_badge](https://img.shields.io/static/v1?label=python&message=3.8%20|%203.9&color=blue&style=flat)](https://www.python.org) [![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg)](https://github.com/hacs/integration)
 
-- - -
+> News ✌️ **NotiFreeze** **v0.5.0** contains **new features** and **breaking changes!** 🥶
 
-## Hello 🥶✌️ **NotiFreeze** >=**v0.5.0** contains cool new features and **breaking changes**! Please update your configuration!
+---
 
-- - -
+[NotiFreeze](https://github.com/benleb/ad-notifreeze) is an [AppDaemon](https://github.com/appdaemon/appdaemon) app which reminds to close windows if temperature difference between inside/outside exceeds a specified threshold.*  
 
-*[AppDaemon](https://github.com/appdaemon/appdaemon) app which reminds to close windows if temperature difference between inside/outside exceeds a specified threshold.*  
+This works for every **`room`** separately e.g. an open window in the bathroom checks outside temperate against the bathroom temperature sensor. Useful in winter to remind you to close the bathroom windows after airing 🥶 but also in the summer when you do not want that hot outside air inside 🥵
 
-This works for every **`room`** separately e.g. an open window in the bathroom checks outside temperate against the bathroom temperature sensor. Useful in winter to remind you to close the bathroom windows after airing, but also in the summer when you do not want that hot outside air inside.
-
-**Note:** In **NotiFreeze** you configure just **one App for all your rooms** in contrast to separate apps/configurations per room like in [AutoMoLi](https://github.com/benleb/ad-automoli).
+> **Note:** In **NotiFreeze** you configure just **one App for all your rooms** in contrast to separate apps/configurations per room like in [AutoMoLi](https://github.com/benleb/ad-automoli).
 
 ## Installation
 
@@ -65,7 +63,7 @@ key | optional | type | default | description
 `class` | False | string | Notifreeze | The name of the Class.
 `notify_service` | False | string | | Home Assistant notification service
 `always_notify` | True | bool | false | Send notifications even when the indoor temperature is unchanged (compared to before the door/windows was open)
-`outdoor` | False | string | | Sensor for outside temperature
+`outdoor` | False | string | | Sensor for outside temperature 🥵 🥶
 `max_difference` | True | float | 5 | Maximum tolerated tmperature difference
 `rooms` | False | list<string, [**room**](#room)> | | List of [**rooms**](#room) or simple *room* names NotiFreeze will monitor. Users of the famous [AutoMoLi](https://github.com/benleb/ad-automoli) may already by familiar with the *rooms* concept.
 `delays` | True | [**delay**](#delays) | [**see below**](#delays) | Delays NotiFreeze will use.

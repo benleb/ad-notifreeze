@@ -342,24 +342,14 @@ class NotiFreeze(hass.Hass):  # type: ignore
         ]
 
     async def create_message(self, room: Room, entity_id: str, indoor: float, initial: float) -> str:
-        # room: Any = self.rooms[room_name]
-        # open_since = await get_timestring(await self.get_state(entity_id, attribute="last_changed"))
-        # indoor_difference: float = indoor - initial
-        # message: str = (
-        #     f"{room.name} {hl(await self.fname(entity_id, room.name))} open since {open_since}: {initial:.1f}°C"
-        # )
-        # if indoor != initial:
-        #     message = message + f" → {indoor:.1f}°C ({hl(f'{indoor_difference:+.1f}°C')})"
-
         tpl = self.msgs["SINCE"] if indoor == initial else self.msgs["CHANGE"]
-
         return tpl.format(
             room_name=room.name,
             entity_name=hl(await self.fname(entity_id, room.name)),
             open_since=await get_timestring(await self.get_state(entity_id, attribute="last_changed")),
-            initial=initial,
-            indoor=indoor,
-            indoor_difference=indoor - initial,
+            initial=round(initial, 1),
+            indoor=round(indoor, 1),
+            indoor_difference=f"{(indoor - initial):+.1f}",
         )
 
     async def fname(self, entity: str, room_name: str) -> str:
