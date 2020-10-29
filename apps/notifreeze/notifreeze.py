@@ -469,6 +469,13 @@ class NotiFreeze(hass.Hass):  # type: ignore
 # ids of available messages
 IDS = set(["SINCE", "CHANGE"])
 
+# use "en_US" form for messages which should be *read*
+#             - can include emoji or big/many numbers...
+
+# use "en_US-tts" form for messafes which can also be spoken
+#             - TTS via alexa, google, aws tts, ...
+#             - use commas or other "tts stuff" to enhance the quality/pronouncing
+
 # translations with en_US as base
 MSGS: Dict[str, Dict[str, str]] = {
     "en_US": {

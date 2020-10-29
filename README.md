@@ -2,7 +2,7 @@
 
 [![python_badge](https://img.shields.io/static/v1?label=python&message=3.8%20|%203.9&color=blue&style=flat)](https://www.python.org) [![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg)](https://github.com/hacs/integration)
 
-> News ✌️ **NotiFreeze** **v0.5.0** contains **new features** and **breaking changes!** 🥶
+> News ✌️ **NotiFreeze** **v0.5.0** contains **new features** and **breaking changes!** 🥶 Check below for more info about new config format!
 
 ---
 
@@ -36,6 +36,7 @@ If sensors entities have an ***entity id*** matching:
 notifreeze:
   module: notifreeze
   class: NotiFreeze
+  locale: de_DE
   notify_service: notify.mobile_app_ben
   always_notify: true
   outdoor: sensor.temperature_outdoor
@@ -61,6 +62,7 @@ key | optional | type | default | description
 -- | -- | -- | -- | --
 `module` | False | string | notifreeze | The module name of the app.
 `class` | False | string | Notifreeze | The name of the Class.
+`class` | True | string | en_US | Language! Available `en_US`, `de_DE` - contribute your language! 🤓 check below the code in [`notifreeze.py`](apps/notifreeze/notifreeze.py)!
 `notify_service` | False | string | | Home Assistant notification service
 `always_notify` | True | bool | false | Send notifications even when the indoor temperature is unchanged (compared to before the door/windows was open)
 `outdoor` | False | string | | Sensor for outside temperature 🥵 🥶
