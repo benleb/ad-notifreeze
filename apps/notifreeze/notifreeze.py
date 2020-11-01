@@ -10,6 +10,7 @@ import re
 
 from datetime import datetime
 from pprint import pformat
+from pathlib import PurePath
 from statistics import fmean
 from sys import version_info
 from typing import Any, Dict, Iterable, List, Optional, Set, Union
@@ -324,7 +325,7 @@ class NotiFreeze(hass.Hass):  # type: ignore
                     )
 
                     # debug
-                    self.lg(f"notification to {self.notify_service}: {message}", icon=APP_ICON)
+                    self.lg(f"📬 -> {PurePath(self.notify_service).stem}: {message}", icon=APP_ICON)
 
             elif entity_id in room.handles:
                 # temperature difference in allowed thresholds, cancelling scheduled callbacks
