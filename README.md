@@ -96,7 +96,7 @@ var | description | not available in message
 `entity_name` | name of the door/windows
 `open_since` | time since opened
 `initial` | indoor temperature when door/windows was opened
-`indoor` | current indoor temperature | `since`
+`indoor` | current indoor temperature | **since**, use `initial` for indoor temperate
 
 ## delays
 
