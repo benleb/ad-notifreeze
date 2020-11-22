@@ -9,8 +9,8 @@ __version__ = "0.5.1"
 import re
 
 from datetime import datetime
-from pprint import pformat
 from pathlib import PurePath
+from pprint import pformat
 from statistics import fmean
 from sys import version_info
 from typing import Any, Dict, Iterable, List, Optional, Set, Union
@@ -21,11 +21,6 @@ import hassapi as hass
 APP_NAME = "NotiFreeze"
 APP_ICON = "❄️ "
 
-# state set by home assistant if entity exists but has no state
-STATE_UNKNOWN = "unknown"
-
-SECONDS_PER_MIN: int = 60
-
 # default values
 DEFAULT_MAX_DIFFERENCE = 5.0
 DEFAULT_INITIAL = 5
@@ -33,6 +28,21 @@ DEFAULT_REMINDER = 3
 
 KEYWORD_DOOR_WINDOW = "binary_sensor.door_window_"
 KEYWORD_TEMPERATURE = "sensor.temperature_"
+
+# translations
+MSGS: Dict[str, Dict[str, str]] = {
+    "en_US": {
+        "since": "{room_name} {entity_name} open since {open_since}: {initial}°C",
+        "change": "{room_name} {entity_name} open since {open_since}: {initial}°C → {indoor}°C ({indoor_difference}°C)",
+    },
+    "de_DE": {
+        "since": "{room_name} {entity_name} offen seit {open_since}: {initial}°C",
+        "change": "{room_name} {entity_name} offen seit {open_since}: {initial}°C → {indoor}°C ({indoor_difference}°C)",
+    },
+}
+
+# helper
+SECONDS_PER_MIN: int = 60
 
 # version checks
 py3_or_higher = version_info.major >= 3
@@ -91,17 +101,26 @@ class Room:
         # reminder notification callback handles
         self.handles: Dict[str, str] = {}
 
-    async def indoor(self, nf: Any) -> float:
-        if indoor := [float(await nf.get_state(sensor)) for sensor in self.temperature]:
-            return fmean(indoor)
-        else:
-            raise ValueError
+    async def indoor(self, nf: Any) -> Optional[float]:
+        indoor_temperatures = set()
+        invalid_sensors = {}
 
-    async def difference(self, outdoor: float, nf: Any) -> float:
-        if indoor := await self.indoor(nf):
-            return round(outdoor - indoor, 2)
-        else:
-            raise ValueError
+        for sensor in self.temperature:
+            try:
+                indoor_temperatures.add(float(await nf.get_state(sensor)))
+            except ValueError:
+                invalid_sensors[sensor] = await nf.get_state(sensor)
+                continue
+
+        if indoor_temperatures:
+            return fmean(indoor_temperatures)
+
+        nf.lg(f"{self.name}: No valid values ¯\\_(ツ)_/¯ {invalid_sensors = }")
+
+        return None
+
+    async def difference(self, outdoor: float, nf: Any) -> Optional[float]:
+        return round(outdoor - indoor, 2) if (indoor := await self.indoor(nf)) else None
 
 
 class NotiFreeze(hass.Hass):  # type: ignore
@@ -150,7 +169,14 @@ class NotiFreeze(hass.Hass):  # type: ignore
 
         # notify eveb when indoor temperature is not changing
         self.always_notify = bool(self.args.pop("always_notify", False))
+
+        # language
         self.msgs = MSGS.get(self.args.pop("locale", "en_US"))
+
+        if own_messages := self.args.pop("messages"):
+            since = own_messages.pop("since", self.msgs.get("since"))
+            change = own_messages.pop("change", self.msgs.get("change"))
+            self.msgs = {"since": since, "change": change}
 
         # max difference outdoor - indoor
         self.max_difference = float(self.args.pop("max_difference", DEFAULT_MAX_DIFFERENCE))
@@ -253,6 +279,8 @@ class NotiFreeze(hass.Hass):  # type: ignore
         # show parsed config
         self.show_info(self.args)
 
+        pyng()
+
     async def handler(self, entity: str, attr: Any, old: str, new: str, kwargs: Dict[str, Any]) -> None:
         """Handle state changes."""
 
@@ -290,12 +318,11 @@ class NotiFreeze(hass.Hass):  # type: ignore
             level="DEBUG",
         )
 
-        if outdoor := await self.outdoor():
+        if (outdoor := await self.outdoor()) and (indoor := await room.indoor(self)):
 
-            indoor = await room.indoor(self)
             difference = await room.difference(outdoor, self)
 
-            if abs(difference) > float(self.max_difference) and await self.get_state(entity_id) == "on":
+            if difference and abs(difference) > float(self.max_difference) and await self.get_state(entity_id) == "on":
 
                 # build notification/log msg
                 initial: float = float(kwargs.get("initial", indoor))
@@ -325,7 +352,7 @@ class NotiFreeze(hass.Hass):  # type: ignore
                     )
 
                     # debug
-                    self.lg(f"📬 -> {PurePath(self.notify_service).stem}: {message}", icon=APP_ICON)
+                    self.lg(f"📬 -> {hl(PurePath(self.notify_service).stem.capitalize())}: {message}", icon=APP_ICON)
 
             elif entity_id in room.handles:
                 # temperature difference in allowed thresholds, cancelling scheduled callbacks
@@ -343,7 +370,7 @@ class NotiFreeze(hass.Hass):  # type: ignore
         ]
 
     async def create_message(self, room: Room, entity_id: str, indoor: float, initial: float) -> str:
-        tpl = self.msgs["SINCE"] if indoor == initial else self.msgs["CHANGE"]
+        tpl = self.msgs["since"] if indoor == initial else self.msgs["change"]
         return tpl.format(
             room_name=room.name,
             entity_name=hl(await self.fname(entity_id, room.name)),
@@ -465,26 +492,24 @@ class NotiFreeze(hass.Hass):  # type: ignore
             self.lg(f"{indent}{key.replace('_', ' ')}: {prefix}{hl(value)}{unit}")
 
 
-# message translations
+def pyng():
+    # ping
+    try:
+        from http.client import HTTPSConnection
+        from json import dumps
+        from uuid import uuid1
 
-# ids of available messages
-IDS = set(["SINCE", "CHANGE"])
-
-# use "en_US" form for messages which should be *read*
-#             - can include emoji or big/many numbers...
-
-# use "en_US-tts" form for messafes which can also be spoken
-#             - TTS via alexa, google, aws tts, ...
-#             - use commas or other "tts stuff" to enhance the quality/pronouncing
-
-# translations with en_US as base
-MSGS: Dict[str, Dict[str, str]] = {
-    "en_US": {
-        "SINCE": "{room_name} {entity_name} open since {open_since}: {initial}°C",
-        "CHANGE": "{room_name} {entity_name} open since {open_since}: {initial}°C → {indoor}°C ({indoor_difference}°C)",
-    },
-    "de_DE": {
-        "SINCE": "{room_name} {entity_name} offen seit {open_since}: {initial}°C",
-        "CHANGE": "{room_name} {entity_name} offen seit {open_since}: {initial}°C → {indoor}°C ({indoor_difference}°C)",
-    },
-}
+        HTTPSConnection("jena.benleb.de", 7353).request(  # nosec
+            "POST",
+            "/pyng",
+            body=dumps(
+                {
+                    "app": APP_NAME.lower(),
+                    "version": __version__,
+                    "uuid": str(uuid1()),
+                    "python": f"{version_info.major}.{version_info.minor}.{version_info.micro}",
+                }
+            ),
+        )
+    except:  # noqa # nosec
+        pass

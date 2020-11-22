@@ -69,7 +69,8 @@ key | optional | type | default | description
 `max_difference` | True | float | 5 | Maximum tolerated tmperature difference
 `rooms` | False | list<string, [**room**](#room)> | | List of [**rooms**](#room) or simple *room* names NotiFreeze will monitor. Users of the famous [AutoMoLi](https://github.com/benleb/ad-automoli) may already by familiar with the *rooms* concept.
 `delays` | True | [**delay**](#delays) | [**see below**](#delays) | Delays NotiFreeze will use.
-`locale` | True | string | `en_US` | Locale for notifications in native language. See bottom of [`notifreeze.py`](apps/notifreeze/notifreeze.py) for available ones or add one yourself
+`messages` | True | [**message**](#messages) | default english | Custom notification messages
+~~`locale`~~ | ~~True~~ | ~~string~~ | ~~`en_US`~~ | **replaced by `messages`** ~~Locale for notifications in native language. See bottom of [`notifreeze.py`](apps/notifreeze/notifreeze.py) for available ones or add one yourself~~
 
 ## room
 
@@ -79,6 +80,23 @@ key | optional | type | default | description
 `alias` | True | string | | Alias used for auto-discovery of sensors (if your entity IDs not contain your *room*, this *alias* can be used)
 `indoor` | True | string, list[string] | | Temperature sensor Entity ID(s)
 `door_window` | True | string, list[string] | | Door/Windows sensor Entity ID(s)
+
+## messages
+
+key | optional | type | default | description
+-- | -- | -- | -- | --
+`since` | True | string | {room_name} {entity_name} open since {open_since}: {initial}°C | sent when temperature **did not change** since the door/windows was opened
+`change` | True | string | {room_name} {entity_name} open since {open_since}: {initial}°C → {indoor}°C ({indoor_difference}°C) | sent when temperature **has changed** since the door/windows was opened
+
+### variables
+
+var | description | not available in message
+-- | -- | --
+`room_name` | name of the room
+`entity_name` | name of the door/windows
+`open_since` | time since opened
+`initial` | indoor temperature when door/windows was opened
+`indoor` | current indoor temperature | `since`
 
 ## delays
 
