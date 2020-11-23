@@ -173,7 +173,7 @@ class NotiFreeze(hass.Hass):  # type: ignore
         # language
         self.msgs = MSGS.get(self.args.pop("locale", "en_US"))
 
-        if own_messages := self.args.pop("messages"):
+        if own_messages := self.args.pop("messages", None):
             since = own_messages.pop("since", self.msgs.get("since"))
             change = own_messages.pop("change", self.msgs.get("change"))
             self.msgs = {"since": since, "change": change}
