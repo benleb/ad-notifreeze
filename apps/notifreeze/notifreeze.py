@@ -195,7 +195,8 @@ class NotiFreeze(hass.Hass):  # type: ignore
         self.sensors_outdoor = self.listr(self.args.pop("outdoor"))
 
         # entity list
-        states = await self.get_state()
+        states_sensor = self.get_state(entity_id="sensor")
+        states_binary_sensor = self.get_state(entity_id="binary_sensor")
 
         # set room(s)
         self.rooms: Dict[str, Room] = {}
@@ -215,25 +216,22 @@ class NotiFreeze(hass.Hass):  # type: ignore
                 if isinstance(room_config, dict):
                     room_name = room_config.pop("name").capitalize()
                     room_alias = room_config.pop("alias", room_name)
+
                     door_window.update(
-                        self.listr(
-                            room_config.pop(
-                                "door_window", await self.find_sensors(KEYWORD_DOOR_WINDOW, room_alias, states=states)
-                            )
-                        )
+                        self.listr(room_config.pop("door_window", None))
+                        or await self.find_sensors(KEYWORD_DOOR_WINDOW, room_alias, states=await states_binary_sensor)
                     )
                     indoor.update(
-                        self.listr(
-                            room_config.pop(
-                                "indoor", await self.find_sensors(KEYWORD_TEMPERATURE, room_alias, states=states)
-                            )
-                        )
+                        self.listr(room_config.pop("indoor", None))
+                        or await self.find_sensors(KEYWORD_TEMPERATURE, room_alias, states=await states_sensor)
                     )
 
                 elif isinstance(room_config, str):
                     room_name = room_alias = room_config.capitalize()
-                    door_window.update(await self.find_sensors(KEYWORD_DOOR_WINDOW, room_alias, states=states))
-                    indoor.update(await self.find_sensors(KEYWORD_TEMPERATURE, room_alias, states=states))
+                    door_window.update(
+                        await self.find_sensors(KEYWORD_DOOR_WINDOW, room_alias, states=await states_binary_sensor)
+                    )
+                    indoor.update(await self.find_sensors(KEYWORD_TEMPERATURE, room_alias, states=await states_sensor))
 
                 # create room
                 room = Room(name=room_name, door_window=self.listr(door_window), temperature=self.listr(indoor))
@@ -358,16 +356,18 @@ class NotiFreeze(hass.Hass):  # type: ignore
                 # temperature difference in allowed thresholds, cancelling scheduled callbacks
                 await self.clear_handles(room, entity_id)
 
-    async def find_sensors(self, keyword: str, room_name: str, states: Any = None) -> List[str]:
+    async def find_sensors(self, keyword: str, room_name: str, states: Dict[str, Dict[str, Any]]) -> List[str]:
         """Find sensors by looking for a keyword in the friendly_name."""
-        states = states if states else await self.get_state()
         room_name = room_name.lower()
-        return [
-            sensor
-            for sensor in states
-            if (keyword in sensor and room_name in (await self.friendly_name(sensor)).lower())
-            or (keyword in sensor and room_name in sensor.lower())
-        ]
+        matches: List[str] = []
+        for state in states.values():
+            if (
+                keyword in (entity_id := state.get("entity_id", ""))
+                and room_name in "|".join([entity_id, state.get("attributes", {}).get("friendly_name", "")]).lower()
+            ):
+                matches.append(entity_id)
+
+        return matches
 
     async def create_message(self, room: Room, entity_id: str, indoor: float, initial: float) -> str:
         tpl = self.msgs["since"] if indoor == initial else self.msgs["change"]
