@@ -350,7 +350,7 @@ class NotiFreeze(hass.Hass):  # type: ignore
                     )
 
                     # debug
-                    self.lg(f"📬 -> {hl(PurePath(self.notify_service).stem.capitalize())}: {message}", icon=APP_ICON)
+                    self.lg(f"notifying {hl(PurePath(self.notify_service).stem.capitalize())}: {message}", icon=f"{APP_ICON} ❗")
 
             elif entity_id in room.handles:
                 # temperature difference in allowed thresholds, cancelling scheduled callbacks
