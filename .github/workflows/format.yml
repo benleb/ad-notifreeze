@@ -15,4 +15,4 @@ jobs:
       - name: black
         uses: lgeiger/black-action@master
         with:
-          args: . --check --line-length 120
+          args: . --check --line-length 100
