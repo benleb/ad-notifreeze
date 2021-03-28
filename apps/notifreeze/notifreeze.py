@@ -265,13 +265,13 @@ class NotiFreeze(hass.Hass):  # type: ignore
                     if push.pop("badge", False):
                         push_data["push"]["badge"] = 1
                     if thread_id := push.get("thread_id", None):
-                        push_data["push"]["thread_id"] = (
+                        push_data["push"]["thread-id"] = (
                             f"{thread_id}{room_name}".lower()
                             if thread_id.endswith("-")
                             else thread_id
                         ).lower()
                     if apns_collapse_id := push.get("apns_collapse_id", None):
-                        push_data["apns_headers"]["apns_collapse_id"] = (
+                        push_data["apns_headers"]["apns-collapse-id"] = (
                             f"{apns_collapse_id}{room_name}".lower()
                             if apns_collapse_id.endswith("-")
                             else apns_collapse_id
