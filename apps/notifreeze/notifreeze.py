@@ -92,6 +92,7 @@ class Room:
         name: str,
         door_window: Set[str],
         temperature: Set[str],
+        push_data: Optional[Dict[str, Union[str, int]]],
     ) -> None:
 
         self.name: str = name
@@ -101,6 +102,8 @@ class Room:
         self.temperature: Set[str] = temperature
         # reminder notification callback handles
         self.handles: Dict[str, str] = {}
+        # ios push settings
+        self.push_data: Dict[str, Union[str, int]] = push_data
 
     async def indoor(self, nf: Any) -> Optional[float]:
         indoor_temperatures = set()
@@ -212,6 +215,8 @@ class NotiFreeze(hass.Hass):  # type: ignore
 
         if rooms := self.args.pop("rooms"):
 
+            push = self.args.get("push", {})
+
             for room_config in rooms:
 
                 room_name: str = str()
@@ -252,9 +257,36 @@ class NotiFreeze(hass.Hass):  # type: ignore
                         )
                     )
 
+                # ios push settings
+                # if push := deepcopy(self.args.get("push", {})):
+                if push:
+                    push_data = {"push": {}, "apns_headers": {}}
+
+                    if push.pop("badge", False):
+                        push_data["push"]["badge"] = 1
+                    if thread_id := push.get("thread_id", None):
+                        push_data["push"]["thread_id"] = (
+                            f"{thread_id}{room_name}".lower()
+                            if thread_id.endswith("-")
+                            else thread_id
+                        ).lower()
+                    if apns_collapse_id := push.get("apns_collapse_id", None):
+                        push_data["apns_headers"]["apns_collapse_id"] = (
+                            f"{apns_collapse_id}{room_name}".lower()
+                            if apns_collapse_id.endswith("-")
+                            else apns_collapse_id
+                        ).lower()
+
+                else:
+                    push_data = {}
 
                 # create room
-                room = Room(name=room_name, door_window=self.listr(door_window), temperature=self.listr(indoor))
+                room = Room(
+                    name=room_name,
+                    door_window=self.listr(door_window),
+                    temperature=self.listr(indoor),
+                    push_data=push_data,
+                )
 
                 # create state listener for all door/window sensors
                 if room.door_window and room.temperature:
@@ -373,7 +405,11 @@ class NotiFreeze(hass.Hass):  # type: ignore
                     message = await self.create_message(room, entity_id, indoor, initial)
 
                     # send notification
-                    await self.call_service(self.notify_service, message=re.sub(r"\033\[\dm", "", message))
+                    await self.call_service(
+                        self.notify_service,
+                        message=re.sub(r"\033\[\dm", "", message),
+                        data=room.push_data,
+                    )
 
                     # schedule next reminder
                     room.handles[entity_id] = await self.run_in(
