@@ -62,7 +62,7 @@ key | optional | type | default | description
 -- | -- | -- | -- | --
 `module` | False | string | notifreeze | The module name of the app.
 `class` | False | string | Notifreeze | The name of the Class.
-`class` | True | string | en_US | Language! Available `en_US`, `de_DE` - contribute your language! 🤓 check below the code in [`notifreeze.py`](apps/notifreeze/notifreeze.py)!
+`class` | True | string | en_US | Language! Available `en_US`, `de_DE`, `ru_RU` - contribute your language! 🤓 check below the code in [`notifreeze.py`](apps/notifreeze/notifreeze.py)!
 `notify_service` | False | string | | Home Assistant notification service
 `always_notify` | True | bool | false | Send notifications even when the indoor temperature is unchanged (compared to before the door/windows was open)
 `outdoor` | False | string | | Sensor for outside temperature 🥵 🥶
