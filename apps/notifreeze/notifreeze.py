@@ -39,6 +39,10 @@ MSGS: Dict[str, Dict[str, str]] = {
         "since": "{room_name} {entity_name} offen seit {open_since}: {initial}°C",
         "change": "{room_name} {entity_name} offen seit {open_since}: {initial}°C → {indoor}°C ({indoor_difference}°C)",
     },
+    "pl_PL": {
+        "since": "{room_name} {entity_name} otwarte od {open_since}: {initial}°C",
+        "change": "{room_name} {entity_name} otwarte od {open_since}: {initial}°C → {indoor}°C ({indoor_difference}°C)",
+    },
 }
 
 # helper
